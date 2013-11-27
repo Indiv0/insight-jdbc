@@ -13,8 +13,6 @@ import java.util.Map;
 import java.util.Properties;
 
 public class InsightRealm extends JDBCRealm {
-    public static InsightRealm realm;
-
     private static Map<String, String> defaultProperties = new HashMap<>();
     private String fileLocation = getFileLocation();
 
@@ -29,31 +27,16 @@ public class InsightRealm extends JDBCRealm {
     private Properties properties = null;
 
     public InsightRealm() {
-        super();
-
-        if (realm == null) {
-            realm = this;
-        }
+        loadProperties();
     }
 
     @Override
     protected Connection open() throws SQLException {
         if (properties == null) {
-            try {
-                System.out.println("[insight-jdbc] Loading properties.");
-                properties = loadProperties();
-            } catch (IOException e) {
-                System.out.println("[insight-jdbc] Error loading properties");
-            }
-
-            System.out.println("[insight-jdbc] Saving default properties");
-            properties = saveDefaultProperties();
-
-            setConnectionName(properties.getProperty("dbUsername"));
-            setConnectionPassword(properties.getProperty("dbPassword"));
-            setConnectionURL("jdbc:mysql://" + properties.getProperty("dbURL") + ":" + properties.getProperty("dbPort") + "/" + properties.getProperty("dbName"));
-            setDriverName("org.mariadb.jdbc.Driver");
+            loadProperties();
         }
+
+        setProperties();
 
         return super.open();
     }
@@ -64,19 +47,39 @@ public class InsightRealm extends JDBCRealm {
         properties.setProperty("dbUrl", url);
         properties.setProperty("dbPort", port);
         properties.setProperty("dbName", databaseName);
+        setProperties();
         saveProperties(properties);
     }
 
-    private Properties loadProperties() throws IOException {
-        FileInputStream propFile = new FileInputStream(fileLocation);
+    private void setProperties() {
+        setConnectionName(properties.getProperty("dbUsername"));
+        setConnectionPassword(properties.getProperty("dbPassword"));
+        setConnectionURL("jdbc:mysql://" + properties.getProperty("dbURL") + ":" + properties.getProperty("dbPort") + "/" + properties.getProperty("dbName"));
+        setDriverName("org.mariadb.jdbc.Driver");
 
-        Properties p = new Properties();
-        p.load(propFile);
-
-        return p;
+        System.out.println("[insight-jdbc] Properties set:");
+        System.out.println("\t" + getConnectionName());
+        System.out.println("\t" + getConnectionURL());
+        System.out.println("\t" + getDriverName());
     }
 
-    private Properties saveDefaultProperties() {
+    private void loadProperties() {
+        try {
+            System.out.println("[insight-jdbc] Loading properties.");
+            FileInputStream propFile = new FileInputStream(fileLocation);
+            Properties properties = new Properties();
+            properties.load(propFile);
+            this.properties = properties;
+        } catch (IOException e) {
+            System.out.println("[insight-jdbc] Error loading properties");
+            System.out.println("[insight-jdbc] Saving default properties");
+            saveDefaultProperties();
+        }
+
+        System.out.println("[insight-jdbc] Properties loaded.");
+    }
+
+    private void saveDefaultProperties() {
         Properties properties = new Properties();
 
         for (Map.Entry<String, String> entry : defaultProperties.entrySet()) {
@@ -85,7 +88,7 @@ public class InsightRealm extends JDBCRealm {
 
         saveProperties(properties);
 
-        return properties;
+        this.properties = properties;
     }
 
     private void saveProperties(Properties properties) {
@@ -107,14 +110,5 @@ public class InsightRealm extends JDBCRealm {
         }
 
         return fileLocation;
-    }
-
-    public boolean userExists(String username) {
-        return getPassword(username) == null;
-    }
-
-    @Override
-    public String getPassword(String username) {
-        return super.getPassword(username);
     }
 }
