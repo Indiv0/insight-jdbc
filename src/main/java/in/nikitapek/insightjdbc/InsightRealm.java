@@ -14,28 +14,32 @@ import java.util.Properties;
 
 public class InsightRealm extends JDBCRealm {
     private static final String databaseCreationQuery = //"DROP DATABASE IF EXISTS ?;\n" +
-            "CREATE DATABASE ?;\n" +
-            "COMMIT;";
+        "CREATE DATABASE ?;\n" +
+        "COMMIT;";
 
-    private static final String tableCreationQuery = // "USE ?;\n" +
-            "CREATE TABLE `tomcat_users` (\n" +
-            "    user_name varchar(20) NOT NULL PRIMARY KEY,\n" +
-            "    password varchar(32) NOT NULL\n" +
-            ");\n" +
-            "CREATE TABLE `tomcat_roles` (\n" +
-            "    role_name varchar(20) NOT NULL PRIMARY KEY\n" +
-            ");\n" +
-            "CREATE TABLE `tomcat_users_roles` (\n" +
-            "    user_name varchar(20) NOT NULL,\n" +
-            "    role_name varchar(20) NOT NULL,\n" +
-            "    PRIMARY KEY (user_name, role_name),\n" +
-            "    CONSTRAINT tomcat_users_roles_foreign_key_1 FOREIGN KEY (user_name) REFERENCES tomcat_users (user_name),\n" +
-            "    CONSTRAINT tomcat_users_roles_foreign_key_2 FOREIGN KEY (role_name) REFERENCES tomcat_roles (role_name)\n" +
-            ");\n" +
-            "INSERT INTO `tomcat_users` (user_name, password) VALUES ('admin', '21232f297a57a5a743894a0e4a801fc3');\n" +
-            "INSERT INTO `tomcat_roles` (role_name) VALUES ('insight-user');\n" +
-            "INSERT INTO `tomcat_users_roles` (user_name, role_name) VALUES ('admin', 'insight-user');\n" +
-            "COMMIT;";
+    private static final String usersTableCreationQuery = // "USE ?;\n" +
+        "CREATE TABLE tomcat_users (\n" +
+        "    user_name varchar(20) NOT NULL PRIMARY KEY,\n" +
+        "    password varchar(32) NOT NULL\n" +
+        "INSERT INTO tomcat_users (user_name, password) VALUES ('admin', '21232f297a57a5a743894a0e4a801fc3');\n" +        
+        ");\n" +
+        "COMMIT;";
+    private static final String rolesTableCreationQuery =
+        "CREATE TABLE tomcat_roles (\n" +
+        "    role_name varchar(20) NOT NULL PRIMARY KEY\n" +
+        ");\n" +
+        "INSERT INTO tomcat_roles (role_name) VALUES ('insight-user');\n" +
+        "COMMIT;";
+    private static final String usersRolesTableCreationQuery = 
+        "CREATE TABLE tomcat_users_roles (\n" +
+        "    user_name varchar(20) NOT NULL,\n" +
+        "    role_name varchar(20) NOT NULL,\n" +
+        "    PRIMARY KEY (user_name, role_name),\n" +
+        "    CONSTRAINT tomcat_users_roles_foreign_key_1 FOREIGN KEY (user_name) REFERENCES tomcat_users (user_name),\n" +
+        "    CONSTRAINT tomcat_users_roles_foreign_key_2 FOREIGN KEY (role_name) REFERENCES tomcat_roles (role_name)\n" +
+        ");\n" +
+        "INSERT INTO tomcat_users_roles (user_name, role_name) VALUES ('admin', 'insight-user');\n" +
+        "COMMIT;";
 
     private static Map<String, String> defaultProperties = new HashMap<>();
     private String fileLocation = getFileLocation();
@@ -55,7 +59,9 @@ public class InsightRealm extends JDBCRealm {
         setProperties();
 
         ensureAuthenticationDatabaseExists();
-        ensureAuthenticationTablesExist();
+        ensureTableExists("tomcat_users", usersTableCreationQuery);
+        ensureTableExists("tomcat_roles", rolesTableCreationQuery);
+        ensureTableExists("tomcat_users_roles", usersRolesTableCreationQuery);
     }
 
     @Override
@@ -71,27 +77,7 @@ public class InsightRealm extends JDBCRealm {
     private void ensureAuthenticationDatabaseExists() {
         String configuredDatabaseName = properties.getProperty("dbName");
 
-        boolean databaseExists = false;
-
-        try {
-            ResultSet resultSet = open().getMetaData().getCatalogs();
-
-            while (resultSet.next()) {
-                String databaseName = resultSet.getString(1);
-
-                if (configuredDatabaseName.equals(databaseName)) {
-                    databaseExists = true;
-                    break;
-                }
-            }
-
-            resultSet.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to check for authentication database.");
-        }
-
-        if (databaseExists) {
+        if (databaseExists()) {
             return;
         }
 
@@ -106,35 +92,58 @@ public class InsightRealm extends JDBCRealm {
         }
     }
 
-    private void ensureAuthenticationTablesExist() {
+    private boolean databaseExists() {
         String configuredDatabaseName = properties.getProperty("dbName");
+        boolean databaseExists = false;
 
-        boolean roleTableExists = false;
-        boolean userTableExists = false;
-        boolean userRoleTableExists = false;
+        try {
+            ResultSet resultSet = open().getMetaData().getCatalogs();
+
+            while (resultSet.next()) {
+                String databaseName = resultSet.getString(1);
+
+                if (configuredDatabaseName.equals(resultSet.getString(1))) {
+                    databaseExists = true;
+                }
+            }
+
+            resultSet.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("[insight-jdbc] Failed to check if database '" + configuredDatabaseName + "' exists.");
+        }
+
+        return databaseExists;
+    }
+
+    private boolean tableExists(String tableName) {
+        boolean tableExists = false;
+
+        if (!databaseExists()) {
+            return false;
+        }
 
         try {
             DatabaseMetaData meta = open().getMetaData();
-            ResultSet res = meta.getTables(null, null, null, new String[] {"TABLE"});
-            while (res.next()) {
-                String tableName = res.getString("TABLE_NAME");
+            ResultSet resultSet = meta.getTables(null, null, null, new String[] {"TABLE"});
 
-                if ("tomcat_roles".equals(tableName)) {
-                    roleTableExists = true;
-                }
-                if ("tomcat_users".equals(tableName)) {
-                    userTableExists = true;
-                }
-                if ("tomcat_users_roles".equals(tableName)) {
-                    userRoleTableExists = true;
+            while (resultSet.next()) {
+                if (tableName.equals(resultSet.getString("TABLE_NAME"))) {
+                    tableExists = true;
                 }
             }
+
+            resultSet.close();
         } catch (SQLException e) {
             e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to check for authentication tables.");
+            System.out.println("[insight-jdbc] Failed to check if table '" + tableName + "' exists.");
         }
 
-        if (roleTableExists && userTableExists && userRoleTableExists) {
+        return tableExists;
+    }
+
+    private void ensureTableExists(String tableName, String tableCreationQuery) {
+        if (tableExists(tableName)) {
             return;
         }
 
@@ -145,7 +154,7 @@ public class InsightRealm extends JDBCRealm {
             open().createStatement().executeUpdate(tableCreationQuery);
         } catch (SQLException e) {
             e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to create authentication tables.");
+            System.out.println("[insight-jdbc] Failed to create authentication table '" + tableName + "'.");
         }
     }
 
