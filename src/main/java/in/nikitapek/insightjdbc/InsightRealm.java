@@ -32,9 +32,11 @@ public class InsightRealm extends JDBCRealm {
     private static final String INSERT_DEFAULT_USERS_ROLES_QUERY =
          "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES ('admin', 'insight-user');";
 
-    private final RealmProperties properties = new RealmProperties("insightweb-auth.properties");
+    private RealmProperties properties = new RealmProperties("insightweb-auth.properties");
+    private boolean propertiesSet = false;
 
     public InsightRealm() {
+        setProperties();
         ensureAuthenticationDatabaseExists();
         ensureTableExists("tomcat_users", USERS_TABLE_CREATION_QUERY, INSERT_DEFAULT_USERS_QUERY);
         ensureTableExists("tomcat_roles", ROLES_TABLE_CREATION_QUERY, INSERT_DEFAULT_ROLES_QUERY);
@@ -43,9 +45,9 @@ public class InsightRealm extends JDBCRealm {
 
     @Override
     protected Connection open() throws SQLException {
-        if (properties == null) {
-            properties.loadProperties();
+        if (!propertiesSet) {
             setProperties();
+            propertiesSet = true;
         }
 
         return super.open();
