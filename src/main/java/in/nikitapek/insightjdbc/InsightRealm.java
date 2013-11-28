@@ -13,33 +13,32 @@ import java.util.Map;
 import java.util.Properties;
 
 public class InsightRealm extends JDBCRealm {
-    private static final String databaseCreationQuery = //"DROP DATABASE IF EXISTS ?;\n" +
-        "CREATE DATABASE ?;\n" +
-        "COMMIT;";
+    private static final String databaseCreationQuery =
+        "CREATE DATABASE ?;";
 
-    private static final String usersTableCreationQuery = // "USE ?;\n" +
-        "CREATE TABLE tomcat_users (\n" +
-        "    user_name varchar(20) NOT NULL PRIMARY KEY,\n" +
-        "    password varchar(32) NOT NULL\n" +
-        "INSERT INTO tomcat_users (user_name, password) VALUES ('admin', '21232f297a57a5a743894a0e4a801fc3');\n" +        
-        ");\n" +
-        "COMMIT;";
+    private static final String usersTableCreationQuery =
+        "CREATE TABLE `tomcat_users` (\n" +
+        "    `user_name` varchar(20) NOT NULL PRIMARY KEY,\n" +
+        "    `password` varchar(32) NOT NULL\n" +
+        ");";
+    private static final String insertDefaultUsersQuery =
+        "INSERT INTO `tomcat_users` (`user_name`, `password`) VALUES ('admin', '21232f297a57a5a743894a0e4a801fc3');";
     private static final String rolesTableCreationQuery =
-        "CREATE TABLE tomcat_roles (\n" +
-        "    role_name varchar(20) NOT NULL PRIMARY KEY\n" +
-        ");\n" +
-        "INSERT INTO tomcat_roles (role_name) VALUES ('insight-user');\n" +
-        "COMMIT;";
+        "CREATE TABLE `tomcat_roles` (\n" +
+        "   `role_name` varchar(20) NOT NULL PRIMARY KEY\n" +
+        ");";
+    private static final String insertDefaultRolesQuery =
+        "INSERT INTO `tomcat_roles` (`role_name`) VALUES ('insight-user');";
     private static final String usersRolesTableCreationQuery = 
-        "CREATE TABLE tomcat_users_roles (\n" +
-        "    user_name varchar(20) NOT NULL,\n" +
-        "    role_name varchar(20) NOT NULL,\n" +
-        "    PRIMARY KEY (user_name, role_name),\n" +
-        "    CONSTRAINT tomcat_users_roles_foreign_key_1 FOREIGN KEY (user_name) REFERENCES tomcat_users (user_name),\n" +
-        "    CONSTRAINT tomcat_users_roles_foreign_key_2 FOREIGN KEY (role_name) REFERENCES tomcat_roles (role_name)\n" +
-        ");\n" +
-        "INSERT INTO tomcat_users_roles (user_name, role_name) VALUES ('admin', 'insight-user');\n" +
-        "COMMIT;";
+        "CREATE TABLE IF NOT EXISTS `tomcat_users_roles` (\n" +
+        "    `user_name` varchar(20) NOT NULL,\n" +
+        "    `role_name` varchar(20) NOT NULL,\n" +
+        "    PRIMARY KEY (`user_name`,`role_name`),\n" +
+        "    CONSTRAINT `tomcat_users_roles_foreign_key_1` FOREIGN KEY (`user_name`) REFERENCES `tomcat_users` (`user_name`),\n" +
+        "    CONSTRAINT `tomcat_users_roles_foreign_key_2` FOREIGN KEY (`role_name`) REFERENCES `tomcat_roles` (`role_name`)\n" +
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+    private static final String insertDefaultUsersRolesQuery =
+         "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES ('admin', 'insight-user');";
 
     private static Map<String, String> defaultProperties = new HashMap<>();
     private String fileLocation = getFileLocation();
@@ -59,9 +58,9 @@ public class InsightRealm extends JDBCRealm {
         setProperties();
 
         ensureAuthenticationDatabaseExists();
-        ensureTableExists("tomcat_users", usersTableCreationQuery);
-        ensureTableExists("tomcat_roles", rolesTableCreationQuery);
-        ensureTableExists("tomcat_users_roles", usersRolesTableCreationQuery);
+        ensureTableExists("tomcat_users", usersTableCreationQuery, insertDefaultUsersQuery);
+        ensureTableExists("tomcat_roles", rolesTableCreationQuery, insertDefaultRolesQuery);
+        ensureTableExists("tomcat_users_roles", usersRolesTableCreationQuery, insertDefaultUsersRolesQuery);
     }
 
     @Override
@@ -142,7 +141,7 @@ public class InsightRealm extends JDBCRealm {
         return tableExists;
     }
 
-    private void ensureTableExists(String tableName, String tableCreationQuery) {
+    private void ensureTableExists(String tableName, String tableCreationQuery, String defaultValuesQuery) {
         if (tableExists(tableName)) {
             return;
         }
@@ -151,7 +150,9 @@ public class InsightRealm extends JDBCRealm {
             //PreparedStatement preparedStatement = open().prepareStatement(tableCreationQuery);
             //preparedStatement.setString(1, configuredDatabaseName);
             //preparedStatement.executeUpdate(tableCreationQuery);
-            open().createStatement().executeUpdate(tableCreationQuery);
+            Connection connection = open();
+            connection.createStatement().executeUpdate(tableCreationQuery);
+            connection.createStatement().executeUpdate(defaultValuesQuery);
         } catch (SQLException e) {
             e.printStackTrace();
             System.out.println("[insight-jdbc] Failed to create authentication table '" + tableName + "'.");
