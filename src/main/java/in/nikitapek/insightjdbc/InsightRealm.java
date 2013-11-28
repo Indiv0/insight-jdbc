@@ -2,34 +2,26 @@ package in.nikitapek.insightjdbc;
 
 import org.apache.catalina.realm.JDBCRealm;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.security.Principal;
 import java.sql.*;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
 
 public class InsightRealm extends JDBCRealm {
-    private static final String databaseCreationQuery =
+    private static final String DATABASE_CREATION_QUERY =
         "CREATE DATABASE ?;";
 
-    private static final String usersTableCreationQuery =
+    private static final String USERS_TABLE_CREATION_QUERY =
         "CREATE TABLE `tomcat_users` (\n" +
         "    `user_name` varchar(20) NOT NULL PRIMARY KEY,\n" +
         "    `password` varchar(32) NOT NULL\n" +
         ");";
-    private static final String insertDefaultUsersQuery =
+    private static final String INSERT_DEFAULT_USERS_QUERY =
         "INSERT INTO `tomcat_users` (`user_name`, `password`) VALUES ('admin', '21232f297a57a5a743894a0e4a801fc3');";
-    private static final String rolesTableCreationQuery =
+    private static final String ROLES_TABLE_CREATION_QUERY =
         "CREATE TABLE `tomcat_roles` (\n" +
         "   `role_name` varchar(20) NOT NULL PRIMARY KEY\n" +
         ");";
-    private static final String insertDefaultRolesQuery =
+    private static final String INSERT_DEFAULT_ROLES_QUERY =
         "INSERT INTO `tomcat_roles` (`role_name`) VALUES ('insight-user');";
-    private static final String usersRolesTableCreationQuery = 
+    private static final String USERS_ROLES_TABLE_CREATION_QUERY =
         "CREATE TABLE IF NOT EXISTS `tomcat_users_roles` (\n" +
         "    `user_name` varchar(20) NOT NULL,\n" +
         "    `role_name` varchar(20) NOT NULL,\n" +
@@ -37,36 +29,22 @@ public class InsightRealm extends JDBCRealm {
         "    CONSTRAINT `tomcat_users_roles_foreign_key_1` FOREIGN KEY (`user_name`) REFERENCES `tomcat_users` (`user_name`),\n" +
         "    CONSTRAINT `tomcat_users_roles_foreign_key_2` FOREIGN KEY (`role_name`) REFERENCES `tomcat_roles` (`role_name`)\n" +
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
-    private static final String insertDefaultUsersRolesQuery =
+    private static final String INSERT_DEFAULT_USERS_ROLES_QUERY =
          "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES ('admin', 'insight-user');";
 
-    private static Map<String, String> defaultProperties = new HashMap<>();
-    private String fileLocation = getFileLocation();
-
-    static {
-        defaultProperties.put("dbName", "insight");
-        defaultProperties.put("dbUsername", "insightuser");
-        defaultProperties.put("dbPassword", "insight");
-        defaultProperties.put("dbURL", "localhost");
-        defaultProperties.put("dbPort", "3306");
-    }
-
-    private Properties properties = null;
+    private final RealmProperties properties = new RealmProperties("insightweb-auth.properties");
 
     public InsightRealm() {
-        loadProperties();
-        setProperties();
-
         ensureAuthenticationDatabaseExists();
-        ensureTableExists("tomcat_users", usersTableCreationQuery, insertDefaultUsersQuery);
-        ensureTableExists("tomcat_roles", rolesTableCreationQuery, insertDefaultRolesQuery);
-        ensureTableExists("tomcat_users_roles", usersRolesTableCreationQuery, insertDefaultUsersRolesQuery);
+        ensureTableExists("tomcat_users", USERS_TABLE_CREATION_QUERY, INSERT_DEFAULT_USERS_QUERY);
+        ensureTableExists("tomcat_roles", ROLES_TABLE_CREATION_QUERY, INSERT_DEFAULT_ROLES_QUERY);
+        ensureTableExists("tomcat_users_roles", USERS_ROLES_TABLE_CREATION_QUERY, INSERT_DEFAULT_USERS_ROLES_QUERY);
     }
 
     @Override
     protected Connection open() throws SQLException {
         if (properties == null) {
-            loadProperties();
+            properties.loadProperties();
             setProperties();
         }
 
@@ -74,16 +52,13 @@ public class InsightRealm extends JDBCRealm {
     }
 
     private void ensureAuthenticationDatabaseExists() {
-        String configuredDatabaseName = properties.getProperty("dbName");
-
         if (databaseExists()) {
             return;
         }
 
         try {
-            PreparedStatement preparedStatement = open().prepareStatement(databaseCreationQuery);
-            preparedStatement.setString(1, configuredDatabaseName);
-            //preparedStatement.setString(2, configuredDatabaseName);
+            PreparedStatement preparedStatement = open().prepareStatement(DATABASE_CREATION_QUERY);
+            preparedStatement.setString(1, properties.getDatabaseName());
             preparedStatement.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -92,16 +67,14 @@ public class InsightRealm extends JDBCRealm {
     }
 
     private boolean databaseExists() {
-        String configuredDatabaseName = properties.getProperty("dbName");
+        String configuredDatabaseName = properties.getDatabaseName();
         boolean databaseExists = false;
 
         try {
             ResultSet resultSet = open().getMetaData().getCatalogs();
 
             while (resultSet.next()) {
-                String databaseName = resultSet.getString(1);
-
-                if (configuredDatabaseName.equals(resultSet.getString(1))) {
+                if (properties.getDatabaseName().equals(resultSet.getString(1))) {
                     databaseExists = true;
                 }
             }
@@ -147,9 +120,6 @@ public class InsightRealm extends JDBCRealm {
         }
 
         try {
-            //PreparedStatement preparedStatement = open().prepareStatement(tableCreationQuery);
-            //preparedStatement.setString(1, configuredDatabaseName);
-            //preparedStatement.executeUpdate(tableCreationQuery);
             Connection connection = open();
             connection.createStatement().executeUpdate(tableCreationQuery);
             connection.createStatement().executeUpdate(defaultValuesQuery);
@@ -159,74 +129,15 @@ public class InsightRealm extends JDBCRealm {
         }
     }
 
-    public void setDatabaseProperties(String username, String password, String url, String port, String databaseName) {
-        properties.setProperty("dbUsername", username);
-        properties.setProperty("dbPassword", password);
-        properties.setProperty("dbUrl", url);
-        properties.setProperty("dbPort", port);
-        properties.setProperty("dbName", databaseName);
-        setProperties();
-        saveProperties(properties);
-    }
-
     private void setProperties() {
-        setConnectionName(properties.getProperty("dbUsername"));
-        setConnectionPassword(properties.getProperty("dbPassword"));
-        setConnectionURL("jdbc:mysql://" + properties.getProperty("dbURL") + ":" + properties.getProperty("dbPort") + "/" + properties.getProperty("dbName"));
+        setConnectionName(properties.getUsername());
+        setConnectionPassword(properties.getPassword());
+        setConnectionURL("jdbc:mysql://" + properties.getURL() + ":" + properties.getPort() + "/" + properties.getDatabaseName());
         setDriverName("org.mariadb.jdbc.Driver");
 
         System.out.println("[insight-jdbc] Properties set:");
         System.out.println("\t" + getConnectionName());
         System.out.println("\t" + getConnectionURL());
         System.out.println("\t" + getDriverName());
-    }
-
-    private void loadProperties() {
-        try {
-            System.out.println("[insight-jdbc] Loading properties.");
-            FileInputStream propFile = new FileInputStream(fileLocation);
-            Properties properties = new Properties();
-            properties.load(propFile);
-            this.properties = properties;
-        } catch (IOException e) {
-            System.out.println("[insight-jdbc] Error loading properties");
-            System.out.println("[insight-jdbc] Saving default properties");
-            saveDefaultProperties();
-        }
-
-        System.out.println("[insight-jdbc] Properties loaded.");
-    }
-
-    private void saveDefaultProperties() {
-        Properties properties = new Properties();
-
-        for (Map.Entry<String, String> entry : defaultProperties.entrySet()) {
-            properties.setProperty(entry.getKey(), entry.getValue());
-        }
-
-        saveProperties(properties);
-
-        this.properties = properties;
-    }
-
-    private void saveProperties(Properties properties) {
-        try {
-            properties.store(new FileOutputStream(fileLocation), null);
-        } catch (IOException ex) {
-            ex.printStackTrace();
-        }
-    }
-
-    private static String getFileLocation() {
-        String confDir = System.getProperty("insightweb.confdir", null);
-        String fileLocation = "insightweb-auth.properties";
-
-        if (confDir != null) {
-            File file1 = new File(confDir);
-            File file2 = new File(file1, fileLocation);
-            fileLocation = file2.getPath();
-        }
-
-        return fileLocation;
     }
 }
