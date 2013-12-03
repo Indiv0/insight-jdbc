@@ -7,7 +7,6 @@ import java.sql.*;
 public class InsightRealm extends JDBCRealm {
     private static final String DATABASE_CREATION_QUERY =
         "CREATE DATABASE ?;";
-
     private static final String USERS_TABLE_CREATION_QUERY =
         "CREATE TABLE `tomcat_users` (\n" +
         "    `user_name` varchar(20) NOT NULL PRIMARY KEY,\n" +
@@ -30,141 +29,120 @@ public class InsightRealm extends JDBCRealm {
         "    CONSTRAINT `tomcat_users_roles_foreign_key_2` FOREIGN KEY (`role_name`) REFERENCES `tomcat_roles` (`role_name`)\n" +
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
     private static final String INSERT_DEFAULT_USERS_ROLES_QUERY =
-         "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES (?, ?);";
+        "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES (?, ?);";
 
     private RealmProperties properties = new RealmProperties("insightweb-auth.properties");
     private boolean propertiesSet = false;
 
     public InsightRealm() {
         setProperties();
-        ensureAuthenticationDatabaseExists();
-        ensureTableExists("tomcat_users", USERS_TABLE_CREATION_QUERY);
+
+        String databaseName = properties.getDatabaseName();
+
+        ensureAuthenticationDatabaseExists(open(), databaseName);
+        ensureUsersTableExists(open(), databaseName);
+        ensureRolesTableExists(open(), databaseName);
+        ensureUsersRolesTableExists(open(), databaseName);
+    }
+
+    @Override
+    protected Connection open() {
+        if (!propertiesSet) {
+            setProperties();
+            propertiesSet = true;
+        }
+
+        Connection connection;
+
         try {
-            Connection connection = open();
-            PreparedStatement preparedStatement = connection.prepareStatement(INSERT_DEFAULT_USERS_QUERY);
+            connection = super.open();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("[insight-jdbc] Failed to create connection to database.");
+            return null;
+        }
+
+        return connection;
+    }
+
+    private static void ensureAuthenticationDatabaseExists(Connection connection, String databaseName) {
+        if (SQL.databaseExists(connection, databaseName)) {
+            return;
+        }
+
+        PreparedStatement preparedStatement = SQL.prepareStatement(connection, DATABASE_CREATION_QUERY);
+        try {
+            preparedStatement.setString(1, databaseName);
+            preparedStatement.executeUpdate();
+            SQL.commit(connection);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("[insight-jdbc] Failed to create authentication database.");
+        } finally {
+            SQL.closeStatement(preparedStatement);
+        }
+    }
+
+    private static void ensureUsersTableExists(Connection connection, String databaseName) {
+        if (SQL.ensureTableExists(connection, databaseName, "tomcat_users", USERS_TABLE_CREATION_QUERY)) {
+            return;
+        }
+
+        PreparedStatement preparedStatement = SQL.prepareStatement(connection, INSERT_DEFAULT_USERS_QUERY);
+        try {
             preparedStatement.setString(1, "admin");
             preparedStatement.setString(2, "21232f297a57a5a743894a0e4a801fc3");
             preparedStatement.executeUpdate();
             preparedStatement.setString(1, "user");
             preparedStatement.executeUpdate();
+            SQL.commit(connection);
         } catch (SQLException e) {
             e.printStackTrace();
             System.out.println("[insight-jdbc] Failed to insert default users.");
+        } finally {
+            SQL.closeStatement(preparedStatement);
+        }
+    }
+
+    private static void ensureRolesTableExists(Connection connection, String databaseName) {
+        if (SQL.ensureTableExists(connection, databaseName, "tomcat_roles", ROLES_TABLE_CREATION_QUERY)) {
+            return;
         }
 
-        ensureTableExists("tomcat_roles", ROLES_TABLE_CREATION_QUERY);
+        PreparedStatement preparedStatement = SQL.prepareStatement(connection, INSERT_DEFAULT_ROLES_QUERY);
         try {
-            Connection connection = open();
-            PreparedStatement preparedStatement = connection.prepareStatement(INSERT_DEFAULT_ROLES_QUERY);
             preparedStatement.setString(1, "insight-admin");
             preparedStatement.executeUpdate();
             preparedStatement.setString(1, "insight-user");
             preparedStatement.executeUpdate();
+            SQL.commit(connection);
         } catch (SQLException e) {
             e.printStackTrace();
             System.out.println("[insight-jdbc] Failed to insert default roles.");
+        } finally {
+            SQL.closeStatement(preparedStatement);
+        }
+    }
+
+    private static void ensureUsersRolesTableExists(Connection connection, String databaseName) {
+        if (SQL.ensureTableExists(connection, databaseName, "tomcat_users_roles", USERS_ROLES_TABLE_CREATION_QUERY)) {
+            return;
         }
 
-        ensureTableExists("tomcat_users_roles", USERS_ROLES_TABLE_CREATION_QUERY);
+        PreparedStatement preparedStatement = SQL.prepareStatement(connection, INSERT_DEFAULT_USERS_ROLES_QUERY);
         try {
-            Connection connection = open();
-            PreparedStatement preparedStatement = connection.prepareStatement(INSERT_DEFAULT_USERS_ROLES_QUERY);
             preparedStatement.setString(1, "admin");
             preparedStatement.setString(2, "insight-admin");
             preparedStatement.executeUpdate();
             preparedStatement.setString(1, "user");
             preparedStatement.setString(2, "insight-user");
             preparedStatement.executeUpdate();
+            SQL.commit(connection);
         } catch (SQLException e) {
             e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to insert default roles.");
-        }
-    }
-
-    @Override
-    protected Connection open() throws SQLException {
-        if (!propertiesSet) {
-            setProperties();
-            propertiesSet = true;
-        }
-
-        return super.open();
-    }
-
-    private void ensureAuthenticationDatabaseExists() {
-        if (databaseExists()) {
-            return;
-        }
-
-        try {
-            PreparedStatement preparedStatement = open().prepareStatement(DATABASE_CREATION_QUERY);
-            preparedStatement.setString(1, properties.getDatabaseName());
-            preparedStatement.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to create authentication database.");
-        }
-    }
-
-    private boolean databaseExists() {
-        String configuredDatabaseName = properties.getDatabaseName();
-        boolean databaseExists = false;
-
-        try {
-            ResultSet resultSet = open().getMetaData().getCatalogs();
-
-            while (resultSet.next()) {
-                if (properties.getDatabaseName().equals(resultSet.getString(1))) {
-                    databaseExists = true;
-                }
-            }
-
-            resultSet.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to check if database '" + configuredDatabaseName + "' exists.");
-        }
-
-        return databaseExists;
-    }
-
-    private boolean tableExists(String tableName) {
-        boolean tableExists = false;
-
-        if (!databaseExists()) {
-            return false;
-        }
-
-        try {
-            DatabaseMetaData meta = open().getMetaData();
-            ResultSet resultSet = meta.getTables(null, null, null, new String[] {"TABLE"});
-
-            while (resultSet.next()) {
-                if (tableName.equals(resultSet.getString("TABLE_NAME"))) {
-                    tableExists = true;
-                }
-            }
-
-            resultSet.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to check if table '" + tableName + "' exists.");
-        }
-
-        return tableExists;
-    }
-
-    private void ensureTableExists(String tableName, String tableCreationQuery) {
-        if (tableExists(tableName)) {
-            return;
-        }
-
-        try {
-            Connection connection = open();
-            connection.createStatement().executeUpdate(tableCreationQuery);
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.out.println("[insight-jdbc] Failed to create authentication table '" + tableName + "'.");
+            System.out.println("[insight-jdbc] Failed to insert default users roles.");
+        } finally {
+            SQL.closeStatement(preparedStatement);
         }
     }
 
