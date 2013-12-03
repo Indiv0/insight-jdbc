@@ -14,13 +14,13 @@ public class InsightRealm extends JDBCRealm {
         "    `password` varchar(32) NOT NULL\n" +
         ");";
     private static final String INSERT_DEFAULT_USERS_QUERY =
-        "INSERT INTO `tomcat_users` (`user_name`, `password`) VALUES ('admin', '21232f297a57a5a743894a0e4a801fc3');";
+        "INSERT INTO `tomcat_users` (`user_name`, `password`) VALUES (?, ?);";
     private static final String ROLES_TABLE_CREATION_QUERY =
         "CREATE TABLE `tomcat_roles` (\n" +
         "   `role_name` varchar(20) NOT NULL PRIMARY KEY\n" +
         ");";
     private static final String INSERT_DEFAULT_ROLES_QUERY =
-        "INSERT INTO `tomcat_roles` (`role_name`) VALUES ('insight-user');";
+        "INSERT INTO `tomcat_roles` (`role_name`) VALUES (?);";
     private static final String USERS_ROLES_TABLE_CREATION_QUERY =
         "CREATE TABLE IF NOT EXISTS `tomcat_users_roles` (\n" +
         "    `user_name` varchar(20) NOT NULL,\n" +
@@ -30,7 +30,7 @@ public class InsightRealm extends JDBCRealm {
         "    CONSTRAINT `tomcat_users_roles_foreign_key_2` FOREIGN KEY (`role_name`) REFERENCES `tomcat_roles` (`role_name`)\n" +
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
     private static final String INSERT_DEFAULT_USERS_ROLES_QUERY =
-         "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES ('admin', 'insight-user');";
+         "INSERT INTO `tomcat_users_roles` (`user_name`, `role_name`) VALUES (?, ?);";
 
     private RealmProperties properties = new RealmProperties("insightweb-auth.properties");
     private boolean propertiesSet = false;
@@ -38,9 +38,47 @@ public class InsightRealm extends JDBCRealm {
     public InsightRealm() {
         setProperties();
         ensureAuthenticationDatabaseExists();
-        ensureTableExists("tomcat_users", USERS_TABLE_CREATION_QUERY, INSERT_DEFAULT_USERS_QUERY);
-        ensureTableExists("tomcat_roles", ROLES_TABLE_CREATION_QUERY, INSERT_DEFAULT_ROLES_QUERY);
-        ensureTableExists("tomcat_users_roles", USERS_ROLES_TABLE_CREATION_QUERY, INSERT_DEFAULT_USERS_ROLES_QUERY);
+        ensureTableExists("tomcat_users", USERS_TABLE_CREATION_QUERY);
+        try {
+            Connection connection = open();
+            PreparedStatement preparedStatement = connection.prepareStatement(INSERT_DEFAULT_USERS_QUERY);
+            preparedStatement.setString(1, "admin");
+            preparedStatement.setString(2, "21232f297a57a5a743894a0e4a801fc3");
+            preparedStatement.executeUpdate();
+            preparedStatement.setString(1, "user");
+            preparedStatement.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("[insight-jdbc] Failed to insert default users.");
+        }
+
+        ensureTableExists("tomcat_roles", ROLES_TABLE_CREATION_QUERY);
+        try {
+            Connection connection = open();
+            PreparedStatement preparedStatement = connection.prepareStatement(INSERT_DEFAULT_ROLES_QUERY);
+            preparedStatement.setString(1, "insight-admin");
+            preparedStatement.executeUpdate();
+            preparedStatement.setString(1, "insight-user");
+            preparedStatement.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("[insight-jdbc] Failed to insert default roles.");
+        }
+
+        ensureTableExists("tomcat_users_roles", USERS_ROLES_TABLE_CREATION_QUERY);
+        try {
+            Connection connection = open();
+            PreparedStatement preparedStatement = connection.prepareStatement(INSERT_DEFAULT_USERS_ROLES_QUERY);
+            preparedStatement.setString(1, "admin");
+            preparedStatement.setString(2, "insight-admin");
+            preparedStatement.executeUpdate();
+            preparedStatement.setString(1, "user");
+            preparedStatement.setString(2, "insight-user");
+            preparedStatement.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println("[insight-jdbc] Failed to insert default roles.");
+        }
     }
 
     @Override
@@ -116,7 +154,7 @@ public class InsightRealm extends JDBCRealm {
         return tableExists;
     }
 
-    private void ensureTableExists(String tableName, String tableCreationQuery, String defaultValuesQuery) {
+    private void ensureTableExists(String tableName, String tableCreationQuery) {
         if (tableExists(tableName)) {
             return;
         }
@@ -124,7 +162,6 @@ public class InsightRealm extends JDBCRealm {
         try {
             Connection connection = open();
             connection.createStatement().executeUpdate(tableCreationQuery);
-            connection.createStatement().executeUpdate(defaultValuesQuery);
         } catch (SQLException e) {
             e.printStackTrace();
             System.out.println("[insight-jdbc] Failed to create authentication table '" + tableName + "'.");
